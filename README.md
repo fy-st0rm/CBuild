@@ -6,7 +6,7 @@ Build your C/C++ projects by writing your build system in C++.
 ## Example "cbuild.cpp"
 
 ```c++
-#include <CBuild.h>
+#include <cbuild.h>
 
 int main(int argc, char** argv) {
     CBuild cbuild("g++", argv);
