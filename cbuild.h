@@ -35,7 +35,7 @@ public:
 				LOG("Rebuilding failed.");
 				exit(1);
 			}
-			execvp("./build", argv);
+			execvp("./cbuild", argv);
 		}
 	}
 
