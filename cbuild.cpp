@@ -3,10 +3,11 @@
  * and links to a another program
  */
 
+#define CBUILD_IMPLEMENTATION
 #include "cbuild.h"
 
-void build_static(char** argv) {
-	CBuild lib("g++", argv);
+void build_static(int argc, char** argv) {
+	CBuild lib("g++", argc, argv);
 	lib
 		.out("bin", "libsum.a")
 		.flags({"-Wall"})
@@ -15,8 +16,8 @@ void build_static(char** argv) {
 		.clean();
 }
 
-void build_dynamic(char** argv) {
-	CBuild lib("g++", argv);
+void build_dynamic(int argc, char** argv) {
+	CBuild lib("g++", argc, argv);
 	lib
 #ifdef _WIN32
 		.out("bin", "libsum.dll")
@@ -30,9 +31,9 @@ void build_dynamic(char** argv) {
 }
 
 int main(int argc, char** argv) {
-	build_dynamic(argv);
+	build_dynamic(argc, argv);
 
-	CBuild builder("g++", argv);
+	CBuild builder("g++", argc, argv);
 	builder
 		.out("bin", "test")
 		.flags({"-Wall", "-Wl,-rpath='$ORIGIN'"})
