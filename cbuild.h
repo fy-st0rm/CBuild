@@ -26,13 +26,15 @@ public:
 
 	CBuild& out(std::string out_dir, std::string out_file);
 	CBuild& flags(std::vector<std::string> flags);
+	CBuild& objs(std::vector<std::string> objs);
 	CBuild& src(std::vector<std::string> src);
 	CBuild& inc_paths(std::vector<std::string> inc_paths);
 	CBuild& lib_paths(std::vector<std::string> lib_paths);
 	CBuild& libs(std::vector<std::string> libs);
-	CBuild& generate_compile_cmds();
+	CBuild& compile();
 	CBuild& build();
 	CBuild& build_static_lib();
+	CBuild& generate_compile_cmds();
 	CBuild& run(char** argv = NULL);
 	CBuild& clean();
 
@@ -50,7 +52,7 @@ private:
 	std::string vec_join(const std::vector<std::string>& vec, const std::string& prefix = "");
 	bool replace(std::string& str, const std::string& from, const std::string& to);
 	bool contains(const std::string& src, const std::string& to_find);
-	bool compile(const std::string& src);
+	bool compile_single(const std::string& src);
 
 private:
 	std::string m_cc, m_out_dir, m_out_file;
@@ -99,27 +101,32 @@ CBuild& CBuild::out(std::string out_dir, std::string out_file) {
 }
 
 CBuild& CBuild::flags(std::vector<std::string> flags) {
-	m_flags = flags;
+	m_flags.insert(m_flags.end(), flags.begin(), flags.end());
+	return *this;
+}
+
+CBuild& CBuild::objs(std::vector<std::string> objs) {
+	m_objs.insert(m_objs.end(), objs.begin(), objs.end());
 	return *this;
 }
 
 CBuild& CBuild::src(std::vector<std::string> src) {
-	m_src = src;
+	m_src.insert(m_src.end(), src.begin(), src.end());
 	return *this;
 }
 
 CBuild& CBuild::inc_paths(std::vector<std::string> inc_paths) {
-	m_inc_paths = inc_paths;
+	m_inc_paths.insert(m_inc_paths.end(), inc_paths.begin(), inc_paths.end());
 	return *this;
 }
 
 CBuild& CBuild::lib_paths(std::vector<std::string> lib_paths) {
-	m_lib_paths = lib_paths;
+	m_lib_paths.insert(m_lib_paths.end(), lib_paths.begin(), lib_paths.end());
 	return *this;
 }
 
 CBuild& CBuild::libs(std::vector<std::string> libs) {
-	m_libs = libs;
+	m_libs.insert(m_libs.end(), libs.begin(), libs.end());
 	return *this;
 }
 
@@ -146,13 +153,18 @@ CBuild& CBuild::generate_compile_cmds() {
 	return *this;
 }
 
-CBuild& CBuild::build() {
+CBuild& CBuild::compile() {
 	for (auto src : m_src) {
-		if(!compile(src)) {
+		if(!compile_single(src)) {
 			LOG("Compilation failed at: %s", src.c_str());
 			exit(1);
 		}
 	}
+	return *this;
+}
+
+CBuild& CBuild::build() {
+	compile();
 
 	std::string flags = vec_join(m_flags);
 	std::string lib_paths = vec_join(m_lib_paths, "-L");
@@ -181,12 +193,7 @@ CBuild& CBuild::build() {
 }
 
 CBuild& CBuild::build_static_lib() {
-	for (auto src : m_src) {
-		if(!compile(src)) {
-			LOG("Compilation failed at: %s", src.c_str());
-			exit(1);
-		}
-	}
+	compile();
 
 	std::string flags = vec_join(m_flags);
 	std::string objs = vec_join(m_objs);
@@ -245,15 +252,15 @@ bool CBuild::contains(const std::string& src, const std::string& to_find) {
 	return false;
 }
 
-bool CBuild::compile(const std::string& src) {
+bool CBuild::compile_single(const std::string& src) {
 	std::string flags = vec_join(m_flags);
 	std::string inc_paths = vec_join(m_inc_paths, "-I");
 
 	std::string obj = src;
 	if (contains(obj, ".cpp"))
-		replace(obj, "cpp", "o");
+		replace(obj, ".cpp", ".o");
 	else if (contains(obj, ".c"));
-		replace(obj, "c", "o");
+		replace(obj, ".c", ".o");
 
 	m_objs.push_back(obj);
 
