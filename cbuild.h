@@ -49,6 +49,7 @@ private:
 
 	std::string vec_join(const std::vector<std::string>& vec, const std::string& prefix = "");
 	bool replace(std::string& str, const std::string& from, const std::string& to);
+	bool contains(const std::string& src, const std::string& to_find);
 	bool compile(const std::string& src);
 
 private:
@@ -238,12 +239,22 @@ bool CBuild::replace(std::string& str, const std::string& from, const std::strin
 	return true;
 }
 
+bool CBuild::contains(const std::string& src, const std::string& to_find) {
+	if (src.find(to_find) != std::string::npos)
+		return true;
+	return false;
+}
+
 bool CBuild::compile(const std::string& src) {
 	std::string flags = vec_join(m_flags);
 	std::string inc_paths = vec_join(m_inc_paths, "-I");
 
 	std::string obj = src;
-	replace(obj, "cpp", "o");
+	if (contains(obj, ".cpp"))
+		replace(obj, "cpp", "o");
+	else if (contains(obj, ".c"));
+		replace(obj, "c", "o");
+
 	m_objs.push_back(obj);
 
 	std::string dir = std::filesystem::current_path().string();
