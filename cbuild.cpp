@@ -6,8 +6,8 @@
 #define CBUILD_IMPLEMENTATION
 #include "cbuild.h"
 
-void build_static(int argc, char** argv) {
-	CBuild lib("g++", argc, argv);
+void build_static() {
+	CBuild lib("g++");
 	lib
 		.out("bin", "libsum.a")
 		.flags({"-Wall"})
@@ -16,8 +16,8 @@ void build_static(int argc, char** argv) {
 		.clean();
 }
 
-void build_dynamic(int argc, char** argv) {
-	CBuild lib("g++", argc, argv);
+void build_dynamic() {
+	CBuild lib("g++");
 	lib
 #ifdef _WIN32
 		.out("bin", "libsum.dll")
@@ -31,9 +31,11 @@ void build_dynamic(int argc, char** argv) {
 }
 
 int main(int argc, char** argv) {
-	build_dynamic(argc, argv);
+	cbuild_rebuild(argc, argv);
 
-	CBuild builder("g++", argc, argv);
+	build_dynamic();
+
+	CBuild builder("g++");
 	builder
 		.out("bin", "test")
 		.flags({"-Wall", "-Wl,-rpath='$ORIGIN'"})

@@ -15,13 +15,28 @@
 	printf(__VA_ARGS__);\
 	printf("\n")
 
+template <typename TP>
+static std::time_t to_time_t(TP tp) {
+	using namespace std::chrono;
+	auto sctp = time_point_cast<system_clock::duration>(
+		tp - TP::clock::now()
+		+ system_clock::now()
+	);
+	return system_clock::to_time_t(sctp);
+}
+
+void cbuild_rebuild(int argc, char** argv);
+std::string vec_join(const std::vector<std::string>& vec, const std::string& prefix = "");
+bool replace(std::string& str, const std::string& from, const std::string& to);
+bool contains(const std::string& src, const std::string& to_find);
+
 typedef struct {
 	std::string dir, cmd, file;
 } CompileCommand;
 
 class CBuild {
 public:
-	CBuild (std::string cc, int argc, char** argv);
+	CBuild (std::string cc);
 	~CBuild();
 
 	CBuild& out(std::string out_dir, std::string out_file);
@@ -39,19 +54,6 @@ public:
 	CBuild& clean();
 
 private:
-	template <typename TP>
-	std::time_t to_time_t(TP tp) {
-		using namespace std::chrono;
-		auto sctp = time_point_cast<system_clock::duration>(
-			tp - TP::clock::now()
-			+ system_clock::now()
-		);
-		return system_clock::to_time_t(sctp);
-	}
-
-	std::string vec_join(const std::vector<std::string>& vec, const std::string& prefix = "");
-	bool replace(std::string& str, const std::string& from, const std::string& to);
-	bool contains(const std::string& src, const std::string& to_find);
 	bool compile_single(const std::string& src);
 
 private:
@@ -63,8 +65,7 @@ private:
 
 #ifdef CBUILD_IMPLEMENTATION
 
-CBuild::CBuild(std::string cc, int argc, char** argv)
-	: m_cc(cc) {
+void cbuild_rebuild(int argc, char** argv) {
 	std::time_t bin_t = to_time_t(std::filesystem::last_write_time("cbuild"));
 	std::time_t src_t = to_time_t(std::filesystem::last_write_time("cbuild.cpp"));
 
@@ -85,6 +86,32 @@ CBuild::CBuild(std::string cc, int argc, char** argv)
 		status = std::system(rerun.c_str());
 		exit(status);
 	}
+}
+
+std::string vec_join(const std::vector<std::string>& vec, const std::string& prefix) {
+	std::string out;
+	for (auto e : vec) {
+		out += prefix + e + " ";
+	}
+	return out;
+}
+
+bool replace(std::string& str, const std::string& from, const std::string& to) {
+	size_t start_pos = str.find(from);
+	if(start_pos == std::string::npos)
+		return false;
+	str.replace(start_pos, from.length(), to);
+	return true;
+}
+
+bool contains(const std::string& src, const std::string& to_find) {
+	if (src.find(to_find) != std::string::npos)
+		return true;
+	return false;
+}
+
+CBuild::CBuild(std::string cc)
+	: m_cc(cc) {
 }
 
 CBuild::~CBuild() {
@@ -228,28 +255,6 @@ CBuild& CBuild::clean() {
 		std::filesystem::remove(obj);
 	}
 	return *this;
-}
-
-std::string CBuild::vec_join(const std::vector<std::string>& vec, const std::string& prefix) {
-	std::string out;
-	for (auto e : vec) {
-		out += prefix + e + " ";
-	}
-	return out;
-}
-
-bool CBuild::replace(std::string& str, const std::string& from, const std::string& to) {
-	size_t start_pos = str.find(from);
-	if(start_pos == std::string::npos)
-		return false;
-	str.replace(start_pos, from.length(), to);
-	return true;
-}
-
-bool CBuild::contains(const std::string& src, const std::string& to_find) {
-	if (src.find(to_find) != std::string::npos)
-		return true;
-	return false;
 }
 
 bool CBuild::compile_single(const std::string& src) {

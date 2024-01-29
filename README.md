@@ -10,7 +10,8 @@ Build your C/C++ projects by writing your build system in C++.
 #include <cbuild.h>
 
 int main(int argc, char** argv) {
-    CBuild cbuild("g++", argc, argv);
+    cbuild_rebuild(argc, argv);     // Rebuilds the build program when changed
+    CBuild cbuild("g++");
     build
         .out("bin", "example")       // Define output dir and output file name
         .flags({"-Wall"})            // Flags to provide
