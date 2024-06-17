@@ -5,26 +5,27 @@
 #include <vector>
 #include <string>
 #include <iostream>
-#include <filesystem>
 #include <algorithm>
 #include <time.h>
 #include <unistd.h>
+#include <cstdio>
+
+#include <sys/types.h>
+#include <sys/stat.h> // stat
+#include <errno.h>    // errno, ENOENT, EEXIST
+#if defined(_WIN32)
+#include <direct.h>   // _mkdir
+#define stat _stat
+#endif
 
 #define LOG(...) \
 	printf("[LOG]: ");\
 	printf(__VA_ARGS__);\
 	printf("\n")
 
-template <typename TP>
-static std::time_t to_time_t(TP tp) {
-	using namespace std::chrono;
-	auto sctp = time_point_cast<system_clock::duration>(
-		tp - TP::clock::now()
-		+ system_clock::now()
-	);
-	return system_clock::to_time_t(sctp);
-}
-
+bool is_dir_exist(const std::string& path);
+bool make_path(const std::string& path);
+time_t last_write_time(const std::string& path);
 void cbuild_rebuild(int argc, char** argv);
 std::string vec_join(const std::vector<std::string>& vec, const std::string& prefix = "");
 bool replace(std::string& str, const std::string& from, const std::string& to);
@@ -49,7 +50,7 @@ public:
 	CBuild& compile();
 	CBuild& build();
 	CBuild& build_static_lib();
-	CBuild& generate_compile_cmds();
+// CBuild& generate_compile_cmds();
 	CBuild& run(char** argv = NULL);
 	CBuild& clean();
 
@@ -65,9 +66,75 @@ private:
 
 #ifdef CBUILD_IMPLEMENTATION
 
+bool is_dir_exist(const std::string& path) {
+	struct stat info;
+	if (stat(path.c_str(), &info) != 0) {
+		return false;
+	}
+#if defined(_WIN32)
+	return (info.st_mode & _S_IFDIR) != 0;
+#else 
+	return (info.st_mode & S_IFDIR) != 0;
+#endif
+}
+
+bool make_path(const std::string& path) {
+#if defined(_WIN32)
+	int ret = _mkdir(path.c_str());
+#else
+	mode_t mode = 0755;
+	int ret = mkdir(path.c_str(), mode);
+#endif
+	if (ret == 0)
+		return true;
+
+	switch (errno) {
+		case ENOENT:
+			// parent didn't exist, try to create it
+			{
+				int pos = path.find_last_of('/');
+				if (pos == std::string::npos)
+#if defined(_WIN32)
+					pos = path.find_last_of('\\');
+				if (pos == std::string::npos)
+#endif
+					return false;
+				if (!make_path( path.substr(0, pos) ))
+					return false;
+			}
+			// now, try to create again
+#if defined(_WIN32)
+			return 0 == _mkdir(path.c_str());
+#else 
+			return 0 == mkdir(path.c_str(), mode);
+#endif
+
+		case EEXIST:
+			// done!
+			return is_dir_exist(path);
+
+		default:
+			return false;
+	}
+}
+
+time_t last_write_time(const std::string& path) {
+	struct stat result;
+	if(stat(path.c_str(), &result) == 0)
+	{
+		return result.st_mtime;
+	}
+	LOG("Failed to read stats of file: %s", path.c_str());
+	exit(1);
+}
+
 void cbuild_rebuild(int argc, char** argv) {
-	std::time_t bin_t = to_time_t(std::filesystem::last_write_time("cbuild"));
-	std::time_t src_t = to_time_t(std::filesystem::last_write_time("cbuild.cpp"));
+#ifdef _WIN32
+	time_t bin_t = last_write_time("cbuild.exe");
+#elif defined(__linux__)
+	time_t bin_t = last_write_time("cbuild");
+#endif
+	time_t src_t = last_write_time("cbuild.cpp");
 
 	if (src_t > bin_t) {
 		LOG("Rebuilding cbuild.cpp");
@@ -120,7 +187,7 @@ CBuild::~CBuild() {
 CBuild& CBuild::out(std::string out_dir, std::string out_file) {
 	if (out_dir.length()) {
 		LOG("Generating dir: %s", out_dir.c_str());
-		std::filesystem::create_directories(out_dir);
+		make_path(out_dir);
 	}
 	m_out_dir  = out_dir;
 	m_out_file = out_file;
@@ -157,6 +224,7 @@ CBuild& CBuild::libs(std::vector<std::string> libs) {
 	return *this;
 }
 
+/*
 CBuild& CBuild::generate_compile_cmds() {
 	std::ofstream file("compile_commands.json");
 	file << "[\n";
@@ -179,6 +247,7 @@ CBuild& CBuild::generate_compile_cmds() {
 	file.close();
 	return *this;
 }
+*/
 
 CBuild& CBuild::compile() {
 	for (auto src : m_src) {
@@ -252,7 +321,7 @@ CBuild& CBuild::run(char** argv) {
 CBuild& CBuild::clean() {
 	LOG("Cleaning...");
 	for (auto obj : m_objs) {
-		std::filesystem::remove(obj);
+		std::remove(obj.c_str());
 	}
 	return *this;
 }
@@ -269,10 +338,10 @@ bool CBuild::compile_single(const std::string& src) {
 
 	m_objs.push_back(obj);
 
-	std::string dir = std::filesystem::current_path().string();
+	//std::string dir = std::boost::filesystem::current_path().string();
 	std::string cmd = m_cc + " " + flags + " " + inc_paths + " -o " + obj + " -c " + src;
-	std::string file = dir + "/" + src;
-	m_cmp_cmds.push_back({dir, cmd, file});
+	//std::string file = dir + "/" + src;
+	//m_cmp_cmds.push_back({dir, cmd, file});
 
 	LOG(cmd.c_str());
 	int status = std::system(cmd.c_str());

@@ -44,7 +44,6 @@ int main(int argc, char** argv) {
 		.libs({"sum"})
 		.src({"src/main.cpp"})
 		.build()
-		.generate_compile_cmds()
 		.clean()
 		.run(argv);
 }
