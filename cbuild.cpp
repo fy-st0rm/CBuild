@@ -45,5 +45,5 @@ int main(int argc, char** argv) {
 		.src({"src/main.cpp"})
 		.build()
 		.clean()
-		.run(argv);
+		.run(argc, argv);
 }
