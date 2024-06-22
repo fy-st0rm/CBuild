@@ -18,7 +18,7 @@ int main(int argc, char** argv) {
         .src({"src/example.cpp"})    // List of source files
         .build()                     // Execute build process
         .clean()                     // Clean object files
-        .run(argv);                  // Run the built program
+        .run(argc, argv);            // Run the built program
     return 0;
 }
 ```
