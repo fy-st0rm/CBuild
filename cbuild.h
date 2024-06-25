@@ -257,7 +257,11 @@ CBuild& CBuild::build_static_lib() {
 }
 
 CBuild& CBuild::run(int argc, char** argv) {
+#ifdef _WIN32
+	std::string out = m_out_dir + (m_out_dir.length() ? "\\" : "") + m_out_file;
+#elif defined(__linux__)
 	std::string out = m_out_dir + (m_out_dir.length() ? "/" : "") + m_out_file;
+#endif
 	LOG("Running: %s", out.c_str());
 
 	std::string cmd = out;
