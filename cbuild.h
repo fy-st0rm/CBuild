@@ -62,15 +62,24 @@ void __cbuild_rebuild_itself(int argc, char** argv, const char* src_file);
 void cbuild_cc(CBuild* cb, const char* cc);    // Sets the compiler (gcc,g++,clang,etc)
 void cbuild_out(CBuild* cb, const char* out);  // Sets the output path (build/executable)
 
-#define cbuild_flags(cb, ...)\                                              // Adds flags to the build
-  cbuild_string_list_append_multiple(&(cb)->flags, __VA_ARGS__, NULL) 
-#define cbuild_include_paths(cb, ...)\                                      // Sets the include paths
+/* Adds flags to the build */
+#define cbuild_flags(cb, ...) \
+  cbuild_string_list_append_multiple(&(cb)->flags, __VA_ARGS__, NULL)
+
+/* Sets the include paths */
+#define cbuild_include_paths(cb, ...) \
   cbuild_string_list_append_multiple(&(cb)->inc_paths, __VA_ARGS__, NULL)
-#define cbuild_lib_paths(cb, ...)\                                          // Sets the library paths
+
+/* Sets the library paths */
+#define cbuild_lib_paths(cb, ...) \
   cbuild_string_list_append_multiple(&(cb)->lib_paths, __VA_ARGS__, NULL)
-#define cbuild_libs(cb, ...)\                                               // Sets libraries to link with
+
+/* Sets libraries to link with */
+#define cbuild_libs(cb, ...) \
   cbuild_string_list_append_multiple(&(cb)->libs, __VA_ARGS__, NULL)
-#define cbuild_srcs(cb, ...)\                                               // Append source files
+
+/* Append source files */
+#define cbuild_srcs(cb, ...) \
   cbuild_string_list_append_multiple(&(cb)->srcs, __VA_ARGS__, NULL)
 
 void cbuild_execute(CBuild* cb);                         // Runs the builder and compiles the project
