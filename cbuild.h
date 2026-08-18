@@ -27,15 +27,19 @@ extern "C" {
 // :string def
 #define DA_START_CAP 50
 
+// Dynamic List of Strings
+// items    = Array of Strings which owns the string (heap allocated)
+// len      = Length of the array
+// capacity = Total allocated list
 typedef struct {
   const char** items;
   int len;
   int capacity;
 } CBuildStringList;
 
-void cbuild_string_list_append(CBuildStringList* sl, const char* item);
-void cbuild_string_list_append_multiple(CBuildStringList* sl, ...);
-void cbuild_string_list_print(CBuildStringList* sl);
+void cbuild_string_list_append(CBuildStringList* sl, const char* item);  // Append single string
+void cbuild_string_list_append_multiple(CBuildStringList* sl, ...);      // Append multiple string
+void cbuild_string_list_print(CBuildStringList* sl);                     // Print strings
 
 // :cbuild def
 typedef struct {
@@ -50,23 +54,33 @@ typedef struct {
   CBuildStringList objs;
 } CBuild;
 
-#define cbuild_rebuild_itself(argc, argv) __cbuild_rebuild_itself(argc, argv, __FILE__)
+// Rebuilds the builder if the builder source file is modified
+#define cbuild_rebuild_itself(argc, argv)\
+  __cbuild_rebuild_itself(argc, argv, __FILE__)
 void __cbuild_rebuild_itself(int argc, char** argv, const char* src_file);
-void cbuild_cc(CBuild* cb, const char* cc);
-void cbuild_out(CBuild* cb, const char* out);
-#define cbuild_flags(cb, ...)         cbuild_string_list_append_multiple(&(cb)->flags, __VA_ARGS__, NULL)
-#define cbuild_include_paths(cb, ...) cbuild_string_list_append_multiple(&(cb)->inc_paths, __VA_ARGS__, NULL)
-#define cbuild_lib_paths(cb, ...)     cbuild_string_list_append_multiple(&(cb)->lib_paths, __VA_ARGS__, NULL)
-#define cbuild_libs(cb, ...)          cbuild_string_list_append_multiple(&(cb)->libs, __VA_ARGS__, NULL)
-#define cbuild_srcs(cb, ...)          cbuild_string_list_append_multiple(&(cb)->srcs, __VA_ARGS__, NULL)
-void cbuild_execute(CBuild* cb);
-int cbuild_run_bin(CBuild* cb, int argc, char** argv);
+
+void cbuild_cc(CBuild* cb, const char* cc);    // Sets the compiler (gcc,g++,clang,etc)
+void cbuild_out(CBuild* cb, const char* out);  // Sets the output path (build/executable)
+
+#define cbuild_flags(cb, ...)\                                              // Adds flags to the build
+  cbuild_string_list_append_multiple(&(cb)->flags, __VA_ARGS__, NULL) 
+#define cbuild_include_paths(cb, ...)\                                      // Sets the include paths
+  cbuild_string_list_append_multiple(&(cb)->inc_paths, __VA_ARGS__, NULL)
+#define cbuild_lib_paths(cb, ...)\                                          // Sets the library paths
+  cbuild_string_list_append_multiple(&(cb)->lib_paths, __VA_ARGS__, NULL)
+#define cbuild_libs(cb, ...)\                                               // Sets libraries to link with
+  cbuild_string_list_append_multiple(&(cb)->libs, __VA_ARGS__, NULL)
+#define cbuild_srcs(cb, ...)\                                               // Append source files
+  cbuild_string_list_append_multiple(&(cb)->srcs, __VA_ARGS__, NULL)
+
+void cbuild_execute(CBuild* cb);                         // Runs the builder and compiles the project
+int cbuild_run_bin(CBuild* cb, int argc, char** argv);   // Runs the output executable
 
 // :utils def
-time_t cbuild_last_write_time(const char* path);
-int cbuild_run_cmd(const char **args);
-void cbuild_print_args(const char** args);
-int cbuild_mkdir(const char* path);
+time_t cbuild_last_write_time(const char* path);  // Returns the write time of the file
+int cbuild_run_cmd(const char **args);            // Runs the cmd in different process
+void cbuild_print_args(const char** args);        // Prints the arguments
+int cbuild_mkdir(const char* path);               // Makes a single directory
 
 // :macros
 #define cbuild_panic(x, ...) \
