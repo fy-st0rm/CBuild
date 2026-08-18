@@ -40,6 +40,7 @@ typedef struct {
 void cbuild_string_list_append(CBuildStringList* sl, const char* item);  // Append single string
 void cbuild_string_list_append_multiple(CBuildStringList* sl, ...);      // Append multiple string
 void cbuild_string_list_print(CBuildStringList* sl);                     // Print strings
+void cbuild_string_list_free(CBuildStringList* sl);                      // Cleans the memory
 
 // :cbuild def
 typedef struct {
@@ -159,6 +160,16 @@ void cbuild_string_list_print(CBuildStringList* sl) {
   printf("\n");
 }
 
+void cbuild_string_list_free(CBuildStringList* sl) {
+  for (int i = 0; i < sl->len; i++)
+    free((void*)sl->items[i]);
+
+  free(sl->items);
+
+  sl->items = NULL;
+  sl->len = 0;
+  sl->capacity = 0;
+}
 
 // :cbuild impl
 void __cbuild_rebuild_itself(int argc, char** argv, const char* src_file) {
@@ -252,7 +263,7 @@ int cbuild_execute_single(CBuild* cb, const char* file) {
   }
 
   int status = cbuild_run_cmd(cmd.items);
-  free(cmd.items);
+  cbuild_string_list_free(&cmd);
 
   return status;
 }
@@ -297,7 +308,7 @@ void cbuild_execute(CBuild* cb) {
     "Linking failed"
   );
 
-  free(cmd.items);
+  cbuild_string_list_free(&cmd);
 }
 
 int cbuild_run_bin(CBuild* cb, int argc, char** argv) {
@@ -313,7 +324,7 @@ int cbuild_run_bin(CBuild* cb, int argc, char** argv) {
 
   int status = cbuild_run_cmd(args.items);
 
-  free(args.items);
+  cbuild_string_list_free(&args);
 
   return status;
 }
