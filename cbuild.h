@@ -6,6 +6,9 @@
 #include <stdbool.h>
 #include <time.h>
 #include <limits.h>
+#include <errno.h>
+#include <stdarg.h>
+#include <string.h>
 
 #ifdef __linux__
 #include <unistd.h>
@@ -21,18 +24,49 @@
 extern "C" {
 #endif
 
+// :string def
+#define DA_START_CAP 50
+
+typedef struct {
+  const char** items;
+  int len;
+  int capacity;
+} CBuildStringList;
+
+void cbuild_string_list_append(CBuildStringList* sl, const char* item);
+void cbuild_string_list_append_multiple(CBuildStringList* sl, ...);
+void cbuild_string_list_print(CBuildStringList* sl);
+
 // :cbuild def
 typedef struct {
   const char* cc;
+  const char* out;
+  const char* out_dir;
+  CBuildStringList flags;
+  CBuildStringList inc_paths;
+  CBuildStringList lib_paths;
+  CBuildStringList libs;
+  CBuildStringList srcs;
+  CBuildStringList objs;
 } CBuild;
 
-void cbuild_rebuild_itself(int argc, char** argv, const char* src_file);
+#define cbuild_rebuild_itself(argc, argv) __cbuild_rebuild_itself(argc, argv, __FILE__)
+void __cbuild_rebuild_itself(int argc, char** argv, const char* src_file);
 void cbuild_cc(CBuild* cb, const char* cc);
+void cbuild_out(CBuild* cb, const char* out);
+#define cbuild_flags(cb, ...)         cbuild_string_list_append_multiple(&(cb)->flags, __VA_ARGS__, NULL)
+#define cbuild_include_paths(cb, ...) cbuild_string_list_append_multiple(&(cb)->inc_paths, __VA_ARGS__, NULL)
+#define cbuild_lib_paths(cb, ...)     cbuild_string_list_append_multiple(&(cb)->lib_paths, __VA_ARGS__, NULL)
+#define cbuild_libs(cb, ...)          cbuild_string_list_append_multiple(&(cb)->libs, __VA_ARGS__, NULL)
+#define cbuild_srcs(cb, ...)          cbuild_string_list_append_multiple(&(cb)->srcs, __VA_ARGS__, NULL)
+void cbuild_execute(CBuild* cb);
+int cbuild_run_bin(CBuild* cb, int argc, char** argv);
 
 // :utils def
 time_t cbuild_last_write_time(const char* path);
 int cbuild_run_cmd(const char **args);
 void cbuild_print_args(const char** args);
+int cbuild_mkdir(const char* path);
 
 // :macros
 #define cbuild_panic(x, ...) \
@@ -64,8 +98,47 @@ void cbuild_print_args(const char** args);
 
 #ifdef CBUILD_IMPLEMENTATION
 
+// :string impl
+void cbuild_string_list_append(CBuildStringList* sl, const char* item) {
+  if (sl->len >= sl->capacity) {
+    if (sl->capacity <= 0)
+      sl->capacity = DA_START_CAP;
+    else
+      sl->capacity *= 2;
+
+    sl->items = (const char**) realloc(
+      sl->items,
+      sl->capacity * 256
+    );
+  }
+
+  sl->items[sl->len++] = strdup(item);
+}
+
+void cbuild_string_list_append_multiple(CBuildStringList* sl, ...) {
+  va_list args;
+  va_start(args, sl);
+
+  const char *arg;
+
+  while ((arg = va_arg(args, const char *)) != NULL) {
+    cbuild_string_list_append(sl, arg);
+  }
+
+  va_end(args);
+}
+
+void cbuild_string_list_print(CBuildStringList* sl) {
+  cbuild_log("");
+  for (int i = 0; i < sl->len; i++) {
+    printf("%s ", sl->items[i]);
+  }
+  printf("\n");
+}
+
+
 // :cbuild impl
-void cbuild_rebuild_itself(int argc, char** argv, const char* src_file) {
+void __cbuild_rebuild_itself(int argc, char** argv, const char* src_file) {
   char* bin_file = argv[0];
 
   time_t bin_time = cbuild_last_write_time(bin_file);
@@ -94,10 +167,139 @@ void cbuild_cc(CBuild* cb, const char* cc) {
   cb->cc = cc;
 }
 
+void cbuild_out(CBuild* cb, const char* out) {
+  cb->out = out;
+
+  const char *slash = strrchr(out, '/');
+
+  if (slash == NULL) {
+    cb->out_dir = ".";
+    return;
+  }
+
+  size_t len = slash - out;
+
+  char* out_dir = (char*) malloc(len + 1);
+  cbuild_panic(out_dir != NULL, "Failed to allocate output directory");
+
+  memcpy(out_dir, out, len);
+  out_dir[len] = '\0';
+
+  cb->out_dir = out_dir;
+  cbuild_panic(cbuild_mkdir(cb->out_dir) == 0, "Failed to create out dir");
+}
+
+int cbuild_execute_single(CBuild* cb, const char* file) {
+  CBuildStringList cmd = {0};
+
+  char obj[PATH_MAX];
+  const char *name = strrchr(file, '/');
+  if (name)
+    name++;
+  else
+    name = file;
+
+  snprintf(
+    obj,
+    sizeof(obj),
+    "%s/%.*s.o",
+    cb->out_dir,
+    (int)(strrchr(name, '.') - name),
+    name
+  );
+
+  // Save the obj
+  cbuild_string_list_append(&cb->objs, obj);
+
+  // Main build cmd
+  cbuild_string_list_append(&cmd, cb->cc);
+  cbuild_string_list_append(&cmd, "-o");
+  cbuild_string_list_append(&cmd, obj);
+  cbuild_string_list_append(&cmd, "-c");
+  cbuild_string_list_append(&cmd, file);
+
+  // flags
+  for (int i = 0; i < cb->flags.len; i++)
+    cbuild_string_list_append(&cmd, cb->flags.items[i]);
+
+  // include paths
+  for (int i = 0; i < cb->inc_paths.len; i++) {
+    cbuild_string_list_append(&cmd, "-I");
+    cbuild_string_list_append(&cmd, cb->inc_paths.items[i]);
+  }
+
+  int status = cbuild_run_cmd(cmd.items);
+  free(cmd.items);
+
+  return status;
+}
+
+void cbuild_execute(CBuild* cb) {
+  for (int i = 0; i < cb->srcs.len; i++) {
+    const char* src = cb->srcs.items[i];
+    int status = cbuild_execute_single(cb, src);
+    cbuild_panic(status == 0, "Compilation failed for: %s", src);
+  }
+
+  // Linking
+  CBuildStringList cmd = {0};
+
+  cbuild_string_list_append(&cmd, cb->cc);
+
+  // Output
+  cbuild_string_list_append(&cmd, "-o");
+  cbuild_string_list_append(&cmd, cb->out);
+
+  // Object files
+  for (int i = 0; i < cb->objs.len; i++) {
+    cbuild_string_list_append(&cmd, cb->objs.items[i]);
+  }
+
+  // Library paths
+  for (int i = 0; i < cb->lib_paths.len; i++) {
+    cbuild_string_list_append(&cmd, "-L");
+    cbuild_string_list_append(&cmd, cb->lib_paths.items[i]);
+  }
+
+  // Libraries
+  for (int i = 0; i < cb->libs.len; i++) {
+    cbuild_string_list_append(&cmd, "-l");
+    cbuild_string_list_append(&cmd, cb->libs.items[i]);
+  }
+
+  int status = cbuild_run_cmd(cmd.items);
+
+  cbuild_panic(
+    status == 0,
+    "Linking failed"
+  );
+
+  free(cmd.items);
+}
+
+int cbuild_run_bin(CBuild* cb, int argc, char** argv) {
+  CBuildStringList args = {0};
+
+  cbuild_string_list_append(&args, cb->out);
+
+  for (int i = 1; i < argc; i++)
+    cbuild_string_list_append(&args, argv[i]);
+
+  // NULL Terminate it
+  args.items[args.len] = NULL;
+
+  int status = cbuild_run_cmd(args.items);
+
+  free(args.items);
+
+  return status;
+}
+
 // :utils impl
 time_t cbuild_last_write_time(const char* path) {
 #ifdef _WIN32
   cbuild_panic(false, "Not implemented for windows!");
+
 #elif defined(__linux__)
   struct stat st;
 
@@ -113,6 +315,7 @@ int cbuild_run_cmd(const char **args) {
 
 #ifdef _WIN32
   cbuild_panic(false, "Not implemented for windows!");
+
 #elif defined(__linux__)
   pid_t pid = fork();
 
@@ -138,6 +341,21 @@ void cbuild_print_args(const char** args) {
     printf("%s ", *arg);
   }
   printf("\n");
+}
+
+int cbuild_mkdir(const char* path) {
+#ifdef _WIN32
+  cbuild_panic(false, "Not implemented for windows!");
+
+#elif defined(__linux__)
+  if (mkdir(path, 0755) == 0)
+      return 0;
+
+  if (errno == EEXIST)
+      return 0;
+
+  return -1;
+#endif
 }
 
 #endif // CBUILD_IMPLEMENTATION
