@@ -5,32 +5,49 @@ Build your C/C++ projects by writing your build system in C++.
 
 ## Example "cbuild.cpp"
 
-```c++
+```c
 #define CBUILD_IMPLEMENTATION
-#include <cbuild.h>
+#include "cbuild.h"
 
 int main(int argc, char** argv) {
-    cbuild_rebuild(argc, argv);     // Rebuilds the build program when changed
-    CBuild cbuild("g++");
-    build
-        .out("bin", "example")       // Define output dir and output file name
-        .flags({"-Wall"})            // Flags to provide
-        .src({"src/example.cpp"})    // List of source files
-        .build()                     // Execute build process
-        .clean()                     // Clean object files
-        .run(argc, argv);            // Run the built program
-    return 0;
+  cbuild_rebuild_itself(argc, argv);
+
+  CBuild cbuild = {0};
+  cbuild_cc(&cbuild, "g++");
+  cbuild_out(&cbuild, "build/test");
+  cbuild_flags(&cbuild, "-Wall", "-Werror");
+  cbuild_include_paths(
+    &cbuild,
+    "./lib"
+  );
+  cbuild_lib_paths(
+    &cbuild,
+    "./build"
+  );
+  cbuild_libs(
+    &cbuild,
+    "m"
+  );
+  cbuild_srcs(
+    &cbuild,
+    "lib/lib.cpp",
+    "src/main.cpp"
+  );
+  cbuild_execute(&cbuild);
+  cbuild_run_bin(&cbuild, argc, argv);
+
+  return 0;
 }
 ```
 
 ## Bootstraping cbuild
 
 ```bash
-$ g++ -o cbuild cbuild.cpp
+$ gcc -o cbuild cbuild.c
 $ ./cbuild
 ```
 
-#### After Bootstrapping the cbuild program will rebuilds when "cbuild.cpp" changes
+#### After Bootstrapping the cbuild program will rebuilds when "cbuild.c" changes
 
 
 

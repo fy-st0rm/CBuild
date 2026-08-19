@@ -7,7 +7,7 @@ int main(int argc, char** argv) {
   CBuild cbuild = {0};
   cbuild_cc(&cbuild, "g++");
   cbuild_out(&cbuild, "build/test");
-  cbuild_flags(&cbuild, "-MMD", "-MP", "-Wall", "-Werror");
+  cbuild_flags(&cbuild, "-Wall", "-Werror");
   cbuild_include_paths(
     &cbuild,
     "./lib"

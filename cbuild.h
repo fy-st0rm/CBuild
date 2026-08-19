@@ -47,6 +47,7 @@ typedef struct {
   const char* cc;
   const char* out;
   const char* out_dir;
+  const char* artifacts_dir;
   CBuildStringList flags;
   CBuildStringList inc_paths;
   CBuildStringList lib_paths;
@@ -91,6 +92,16 @@ time_t cbuild_last_write_time(const char* path);  // Returns the write time of t
 int cbuild_run_cmd(const char **args);            // Runs the cmd in different process
 void cbuild_print_args(const char** args);        // Prints the arguments
 int cbuild_mkdir(const char* path);               // Makes a single directory
+
+// :incremental def
+
+// Parses a GCC/Clang -MMD -MF dependency (.d) file into a flat list of the
+// files the object depends on (source + headers it pulled in).
+CBuildStringList __cbuild_parse_dep_file(const char* dep_path);
+
+// Decides whether `src_path` needs to be recompiled into `obj_path`, using
+// `dep_path` (its .d file) to know which headers it depends on.
+bool __cbuild_needs_rebuild(const char* obj_path, const char* dep_path, const char* src_path);
 
 // :macros
 #define cbuild_panic(x, ...) \
@@ -208,42 +219,56 @@ void cbuild_out(CBuild* cb, const char* out) {
 
   if (slash == NULL) {
     cb->out_dir = ".";
-    return;
+  } else {
+    size_t len = slash - out;
+
+    char* out_dir = (char*) malloc(len + 1);
+    cbuild_panic(out_dir != NULL, "Failed to allocate output directory");
+
+    memcpy(out_dir, out, len);
+    out_dir[len] = '\0';
+
+    cb->out_dir = out_dir;
   }
 
-  size_t len = slash - out;
-
-  char* out_dir = (char*) malloc(len + 1);
-  cbuild_panic(out_dir != NULL, "Failed to allocate output directory");
-
-  memcpy(out_dir, out, len);
-  out_dir[len] = '\0';
-
-  cb->out_dir = out_dir;
   cbuild_panic(cbuild_mkdir(cb->out_dir) == 0, "Failed to create out dir");
+
+  // Artifacts dir: where .o/.d files for incremental builds live, kept
+  // separate from out_dir so it doesn't clutter the final binary's folder.
+  size_t artifacts_len = strlen(cb->out_dir) + strlen("/__cbuild_artifacts") + 1;
+  char* artifacts_dir = (char*) malloc(artifacts_len);
+  cbuild_panic(artifacts_dir != NULL, "Failed to allocate artifacts directory");
+  snprintf(artifacts_dir, artifacts_len, "%s/__cbuild_artifacts", cb->out_dir);
+
+  cb->artifacts_dir = artifacts_dir;
+  cbuild_panic(cbuild_mkdir(cb->artifacts_dir) == 0, "Failed to create artifacts dir");
 }
 
 int cbuild_execute_single(CBuild* cb, const char* file) {
-  CBuildStringList cmd = {0};
-
   char obj[PATH_MAX];
+  char dep[PATH_MAX];
+
   const char *name = strrchr(file, '/');
   if (name)
     name++;
   else
     name = file;
 
-  snprintf(
-    obj,
-    sizeof(obj),
-    "%s/%.*s.o",
-    cb->out_dir,
-    (int)(strrchr(name, '.') - name),
-    name
-  );
+  const char *dot = strrchr(name, '.');
+  int base_len = dot ? (int)(dot - name) : (int)strlen(name);
 
-  // Save the obj
+  snprintf(obj, sizeof(obj), "%s/%.*s.o", cb->artifacts_dir, base_len, name);
+  snprintf(dep, sizeof(dep), "%s/%.*s.d", cb->artifacts_dir, base_len, name);
+
+  // Save the obj so it's linked in regardless of whether we recompile it
   cbuild_string_list_append(&cb->objs, obj);
+
+  if (!__cbuild_needs_rebuild(obj, dep, file)) {
+    cbuild_log("Up to date, skipping: %s\n", file);
+    return 0;
+  }
+
+  CBuildStringList cmd = {0};
 
   // Main build cmd
   cbuild_string_list_append(&cmd, cb->cc);
@@ -251,6 +276,13 @@ int cbuild_execute_single(CBuild* cb, const char* file) {
   cbuild_string_list_append(&cmd, obj);
   cbuild_string_list_append(&cmd, "-c");
   cbuild_string_list_append(&cmd, file);
+
+  // Emit a .d file alongside the object listing every header this
+  // translation unit pulled in, so the next build knows what to watch.
+  // -MMD (not -MD) skips system headers -- they're not expected to change.
+  cbuild_string_list_append(&cmd, "-MMD");
+  cbuild_string_list_append(&cmd, "-MF");
+  cbuild_string_list_append(&cmd, dep);
 
   // flags
   for (int i = 0; i < cb->flags.len; i++)
@@ -261,6 +293,10 @@ int cbuild_execute_single(CBuild* cb, const char* file) {
     cbuild_string_list_append(&cmd, "-I");
     cbuild_string_list_append(&cmd, cb->inc_paths.items[i]);
   }
+
+  // NULL-terminate: execvp (via cbuild_run_cmd) needs a NULL sentinel,
+  // and append() never adds one on its own
+  cmd.items[cmd.len] = NULL;
 
   int status = cbuild_run_cmd(cmd.items);
   cbuild_string_list_free(&cmd);
@@ -300,6 +336,10 @@ void cbuild_execute(CBuild* cb) {
     cbuild_string_list_append(&cmd, "-l");
     cbuild_string_list_append(&cmd, cb->libs.items[i]);
   }
+
+  // NULL-terminate: execvp (via cbuild_run_cmd) needs a NULL sentinel,
+  // and append() never adds one on its own
+  cmd.items[cmd.len] = NULL;
 
   int status = cbuild_run_cmd(cmd.items);
 
@@ -390,6 +430,114 @@ int cbuild_mkdir(const char* path) {
 
   return -1;
 #endif
+}
+
+// :incremental impl
+
+CBuildStringList __cbuild_parse_dep_file(const char* dep_path) {
+  CBuildStringList deps = {0};
+
+  FILE* f = fopen(dep_path, "r");
+  if (f == NULL)
+    return deps; // Missing .d -> caller treats this as "deps unknown"
+
+  if (fseek(f, 0, SEEK_END) != 0) {
+    fclose(f);
+    return deps;
+  }
+
+  long size = ftell(f);
+  if (size < 0) {
+    fclose(f);
+    return deps;
+  }
+  fseek(f, 0, SEEK_SET);
+
+  char* buf = (char*) malloc((size_t)size + 1);
+  cbuild_panic(buf != NULL, "Failed to allocate dep file buffer");
+
+  size_t read_bytes = fread(buf, 1, (size_t)size, f);
+  buf[read_bytes] = '\0';
+  fclose(f);
+
+  // Fold "\<newline>" line continuations into plain whitespace
+  for (char* p = buf; *p; p++) {
+    if (p[0] == '\\' && p[1] == '\n') {
+      p[0] = ' ';
+      p[1] = ' ';
+    }
+  }
+
+  // Everything after the rule's ':' is the dependency list -- but only up
+  // to the first blank line, in case -MP appended phony rules afterward
+  char* colon = strchr(buf, ':');
+  char* deps_begin = colon ? colon + 1 : buf;
+
+  // Backslash-newline continuations were just folded away above, so any
+  // '\n' still left in deps_begin genuinely ends the main rule -- whatever
+  // follows is -MP's phony-rule block (if present) or trailing whitespace.
+  char* boundary = strchr(deps_begin, '\n');
+  if (boundary)
+    *boundary = '\0';
+
+  char* p = deps_begin;
+
+  while (*p) {
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')
+      p++;
+
+    if (!*p)
+      break;
+
+    char* start = p;
+    while (*p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n')
+      p++;
+
+    char saved = *p;
+    *p = '\0';
+    cbuild_string_list_append(&deps, start);
+    *p = saved;
+
+    if (saved)
+      p++;
+  }
+
+  free(buf);
+  return deps;
+}
+
+bool __cbuild_needs_rebuild(const char* obj_path, const char* dep_path, const char* src_path) {
+  time_t obj_time = cbuild_last_write_time(obj_path);
+
+  // No object file for this source yet -> must compile
+  if (obj_time == 0)
+    return true;
+
+  CBuildStringList deps = __cbuild_parse_dep_file(dep_path);
+
+  // No .d file (deleted, or predates incremental builds) -> deps are
+  // unknown, so rebuild rather than risk a stale binary
+  if (deps.len == 0)
+    return true;
+
+  bool stale = false;
+
+  // Check the source itself too, in case the .d file is somehow out of sync
+  if (cbuild_last_write_time(src_path) > obj_time)
+    stale = true;
+
+  for (int i = 0; !stale && i < deps.len; i++) {
+    time_t dep_time = cbuild_last_write_time(deps.items[i]);
+
+    // A dependency that vanished (dep_time == 0, e.g. a deleted/renamed
+    // header) means the dependency graph itself changed -> rebuild so the
+    // compiler surfaces the real error instead of silently reusing the .o
+    if (dep_time == 0 || dep_time > obj_time)
+      stale = true;
+  }
+
+  cbuild_string_list_free(&deps);
+  return stale;
 }
 
 #endif // CBUILD_IMPLEMENTATION
