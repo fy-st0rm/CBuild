@@ -2,7 +2,7 @@
 #include "cbuild.h"
 
 int main(int argc, char** argv) {
-  cbuild_rebuild_itself(argc, argv);
+  cbuild_rebuild_itself(argc, argv, "g++");
 
   CBuild cbuild = {0};
   cbuild_cc(&cbuild, "g++");

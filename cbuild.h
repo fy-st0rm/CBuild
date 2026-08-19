@@ -57,9 +57,9 @@ typedef struct {
 } CBuild;
 
 // Rebuilds the builder if the builder source file is modified
-#define cbuild_rebuild_itself(argc, argv)\
-  __cbuild_rebuild_itself(argc, argv, __FILE__)
-void __cbuild_rebuild_itself(int argc, char** argv, const char* src_file);
+#define cbuild_rebuild_itself(argc, argv, cc)\
+  __cbuild_rebuild_itself(argc, argv, cc, __FILE__)
+void __cbuild_rebuild_itself(int argc, char** argv, const char* cc, const char* src_file);
 
 void cbuild_cc(CBuild* cb, const char* cc);    // Sets the compiler (gcc,g++,clang,etc)
 void cbuild_out(CBuild* cb, const char* out);  // Sets the output path (build/executable)
@@ -183,7 +183,7 @@ void cbuild_string_list_free(CBuildStringList* sl) {
 }
 
 // :cbuild impl
-void __cbuild_rebuild_itself(int argc, char** argv, const char* src_file) {
+void __cbuild_rebuild_itself(int argc, char** argv, const char* cc, const char* src_file) {
   char* bin_file = argv[0];
 
   time_t bin_time = cbuild_last_write_time(bin_file);
@@ -193,7 +193,7 @@ void __cbuild_rebuild_itself(int argc, char** argv, const char* src_file) {
     cbuild_log("Rebuilding %s\n", src_file);
 
     const char* build_string[] = {
-      "gcc",
+      cc,
       "-o",
       bin_file,
       src_file,
@@ -315,6 +315,10 @@ void cbuild_execute(CBuild* cb) {
   CBuildStringList cmd = {0};
 
   cbuild_string_list_append(&cmd, cb->cc);
+
+  // flags
+  for (int i = 0; i < cb->flags.len; i++)
+    cbuild_string_list_append(&cmd, cb->flags.items[i]);
 
   // Output
   cbuild_string_list_append(&cmd, "-o");
