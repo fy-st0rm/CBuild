@@ -50,7 +50,7 @@ Create `cbuild.c`:
 #include "cbuild.h"
 
 int main(int argc, char** argv) {
-    cbuild_rebuild_itself(argc, argv);
+    cbuild_rebuild_itself(argc, argv, "gcc");
 
     CBuild cbuild = {0};
 
